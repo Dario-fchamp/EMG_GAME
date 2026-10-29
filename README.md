@@ -10,18 +10,20 @@ Dodge rocks, trees, stickmen and crashed cars, and catch stars. **Score = meters
 conda env create -f environment.yml     # once
 conda activate emg_game
 python lane_dodger.py                   # keyboard only
-python lane_dodger.py --input osc       # + LEFT/RIGHT from Bonsai over OSC (127.0.0.1:5005)
+python lane_dodger.py --input osc       # + LEFT/RIGHT from Bonsai over OSC (localhost:5005)
 ```
 
-Controls: ←/→ or A/D change lane · SPACE/ENTER start · P pause · ESC back / quit.
+Controls: ←/→ or A/D change lane (arrows only with `--input osc`) · SPACE/ENTER start · P pause · ESC back / quit.
 
 ## OSC (from Bonsai)
 
-| Address | Argument | Effect |
-|---|---|---|
-| `/lanedodger/cmd` | int `1` / `2` | LEFT / RIGHT (`0` ignored) |
-| `/lanedodger/left`, `/lanedodger/right` | `true` / non-zero | LEFT / RIGHT (`false` / `0` ignored) |
+Bonsai sends with `CreateUdpClient` (RemoteHostName `localhost`, RemotePort `5005`) → `SendMessage /mcoords`. The game understands two kinds of `/mcoords` messages:
 
-Example Bonsai workflow: `bonsai/LaneDodger_OscSend.bonsai`. Test without Bonsai: `python osc_test_sender.py`.
+| Message | From Bonsai | Effect |
+|---|---|---|
+| a key | `KeyDown A` / `KeyDown S` → `Merge` → `SendMessage` | A = LEFT, S = RIGHT (one lane per message) |
+| 2 values (`ii`, `ff` or bools) | `Zip`/`CombineLatest(left, right)` → `SendMessage` | Item1 going 0 → 1 = LEFT, Item2 going 0 → 1 = RIGHT (one lane per contraction) |
+
+Bonsai workflows: `bonsai/LaneDodger_KeyDown.bonsai` (keys A/S as stand-ins for the muscles) and `bonsai/LaneDodger_Osc.bonsai` (mouse X/Y as a stand-in). Test without Bonsai: `python osc_test_sender.py`.
 
 See [GAME_IDEAS.md](GAME_IDEAS.md) for the full design, code explanations and the Bonsai integration guide (section 8).

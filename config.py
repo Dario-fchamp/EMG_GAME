@@ -69,13 +69,29 @@ DEFAULT_NAME = "Player"
 # Input mode (overridden by the command line: python lane_dodger.py --input osc)
 INPUT_MODE = "keyboard"             # "keyboard" or "osc" (keyboard stays active in osc mode too)
 
-# OSC input: LEFT/RIGHT commands sent by Bonsai (Bonsai.Osc CreateUdpClient + SendMessage)
+# OSC input: commands sent by Bonsai (Bonsai.Osc CreateUdpClient + SendMessage)
 OSC_HOST = "127.0.0.1"              # listen on this machine only
-OSC_PORT = 5005                     # = RemotePort of Bonsai's CreateUdpClient
+OSC_LISTEN_IPV6 = True              # also listen on ::1, in case Bonsai's "localhost" resolves to IPv6
+OSC_PORT = 5005                     # = RemotePort of Bonsai's "UdpSend" CreateUdpClient
+
+# Main address (= Address of Bonsai's SendMessage). Two kinds of messages are understood on it:
+# 1) PAIR, from Zip/CombineLatest(left, right): exactly 2 numbers/bools ("ii", "ff", "TF")
+#    Item1 = LEFT channel (muscle 1), Item2 = RIGHT channel (muscle 2). A channel triggers ONE
+#    command when it goes from inactive to active (rising edge): every-sample or on-change both work.
+# 2) KEY, from KeyDown -> SendMessage: one event per key press. The game looks for the key
+#    (as a key code like 65, a name like "A", or inside the serialized key event) and maps it:
+OSC_ADDRESS_PAIR = "/mcoords"
+OSC_PAIR_THRESHOLD_ON = 0.5         # channel becomes active when value > this (0/1 ints, bools, 0..1 floats)
+OSC_PAIR_THRESHOLD_OFF = 0.5        # ... and inactive again when value <= this (set lower for hysteresis)
+OSC_KEY_LEFT = "A"                  # Bonsai KeyDown Filter for LEFT  (letters/digits: Windows key code = ASCII)
+OSC_KEY_RIGHT = "S"                 # Bonsai KeyDown Filter for RIGHT
+
+# Alternative single-value addresses (also accepted)
 OSC_ADDRESS_CMD = "/lanedodger/cmd"     # int 1 = LEFT, 2 = RIGHT (0 = nothing), or string "LEFT"/"RIGHT"
 OSC_ADDRESS_LEFT = "/lanedodger/left"   # any true / non-zero value (or no argument) = LEFT
 OSC_ADDRESS_RIGHT = "/lanedodger/right" # any true / non-zero value (or no argument) = RIGHT
-OSC_TRIGGER = "every"               # "every": each active message = one command
+OSC_TRIGGER = "every"               # (single-value addresses only; the pair address is always rising-edge)
+                                    # "every": each active message = one command
                                     # "rising": one command only when an address becomes active
                                     #   (use it if Bonsai streams a held state continuously)
 PAUSE_ON_FOCUS_LOST = True          # keyboard mode: pause when the game window loses focus
@@ -84,6 +100,8 @@ PAUSE_ON_FOCUS_LOST_OSC = False     # osc mode: keep running (you may click in B
 # Keyboard mapping
 KEYS_LEFT = [pygame.K_LEFT, pygame.K_a]
 KEYS_RIGHT = [pygame.K_RIGHT, pygame.K_d]
+KEYS_LEFT_OSC = [pygame.K_LEFT]     # in osc mode: arrows only, because Bonsai KeyDown is global and
+KEYS_RIGHT_OSC = [pygame.K_RIGHT]   #   letter keys (A, S...) used in Bonsai would move the car twice
 KEYS_START = [pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER]   # start / restart / resume
 KEYS_PAUSE = [pygame.K_p]
 KEYS_BACK = [pygame.K_ESCAPE]       # in game: pause; paused/game over: menu; menu: quit

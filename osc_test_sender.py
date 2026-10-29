@@ -1,4 +1,7 @@
-"""Send LEFT/RIGHT to the game over OSC, exactly like Bonsai would. For testing without Bonsai.
+"""Send LEFT/RIGHT to the game over OSC, exactly like the Bonsai workflow would. For testing without Bonsai.
+
+Sends OSC_ADDRESS_PAIR (/mcoords) with two ints (left, right), type tag "ii", like Bonsai's
+Zip -> SendMessage: a "contraction" is (1, 0) then (0, 0) for LEFT, (0, 1) then (0, 0) for RIGHT.
 
     python osc_test_sender.py              interactive: type l / r (+ ENTER), q to quit
     python osc_test_sender.py --random 20  20 random commands, one every 0.5-1.5 s
@@ -11,7 +14,9 @@ import time
 import config as C
 from osc_protocol import encode_message
 
-CODES = {"l": 1, "r": 2}                    # same convention as Bonsai: 1 = LEFT, 2 = RIGHT
+PRESS = {"l": (1, 0), "r": (0, 1)}
+RELEASE = (0, 0)
+HOLD_TIME = 0.15                            # s between "press" and "release", like a short contraction
 
 
 def main():
@@ -23,23 +28,26 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     target = (args.host, args.port)
 
-    def send(code):
-        sock.sendto(encode_message(C.OSC_ADDRESS_CMD, code), target)
-        print(f"sent {C.OSC_ADDRESS_CMD} {code} ({'LEFT' if code == 1 else 'RIGHT'}) to {target[0]}:{target[1]}")
+    def contraction(key):
+        sock.sendto(encode_message(C.OSC_ADDRESS_PAIR, *PRESS[key]), target)
+        time.sleep(HOLD_TIME)
+        sock.sendto(encode_message(C.OSC_ADDRESS_PAIR, *RELEASE), target)
+        print(f"sent {C.OSC_ADDRESS_PAIR} {PRESS[key]} -> {RELEASE}  "
+              f"({'LEFT' if key == 'l' else 'RIGHT'}) to {target[0]}:{target[1]}")
 
     if args.random:
         for _ in range(args.random):
-            send(random.choice((1, 2)))
+            contraction(random.choice("lr"))
             time.sleep(random.uniform(0.5, 1.5))
         return
-    print("Type l (LEFT) or r (RIGHT) then ENTER; q to quit.")
+    print("Type l (LEFT) or r (RIGHT) then ENTER; q to quit. 'llr' = LEFT, LEFT, RIGHT.")
     while True:
         line = input("> ").strip().lower()
         if line == "q":
             break
-        for ch in line:                     # "llr" sends LEFT, LEFT, RIGHT
-            if ch in CODES:
-                send(CODES[ch])
+        for ch in line:
+            if ch in PRESS:
+                contraction(ch)
 
 
 if __name__ == "__main__":

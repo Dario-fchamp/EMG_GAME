@@ -130,8 +130,8 @@ class Game:
         self.screen = pygame.Surface((C.WIDTH, C.HEIGHT))   # logical surface, scaled in present()
         self.clock = pygame.time.Clock()
         self.fonts = {}                                    # size -> Font, loaded on first use
-        self.sources = [KeyboardSource()]                  # keyboard is always active
         self.osc = OscSource(osc_host, osc_port) if input_mode == "osc" else None
+        self.sources = [KeyboardSource(osc_mode=self.osc is not None)]   # keyboard is always active
         if self.osc is not None:
             self.sources.append(self.osc)
         self.pause_on_focus_lost = C.PAUSE_ON_FOCUS_LOST_OSC if self.osc else C.PAUSE_ON_FOCUS_LOST
@@ -378,7 +378,15 @@ class Game:
             s, color = self.osc.status, C.CRASH_FLASH
         else:
             last = self.osc.last_command.name if self.osc.last_command else "-"
-            s, color = f"{self.osc.status}   |   last: {last}  ({self.osc.n_commands})", C.TEXT
+            s, color = f"{self.osc.status}   |   last command: {last}  ({self.osc.n_commands})", C.TEXT
+            if self.osc.last_message is not None:          # raw values: checks the Bonsai link
+                address, args = self.osc.last_message
+                values = ", ".join(f"{a:g}" if isinstance(a, float) else str(a) for a in args[:4])
+                raw = f"received {self.osc.n_messages}   last: {address} ({values})"
+            else:
+                raw = "nothing received yet"
+            self.panel((40, y - 50, C.WIDTH - 80, 26))
+            self.text(raw, C.FONT_TINY, C.TEXT_DIM, center=(C.WIDTH // 2, y - 37))
         self.panel((40, y - 16, C.WIDTH - 80, 32))
         self.text(s, C.FONT_TINY, color, center=(C.WIDTH // 2, y))
 
@@ -429,8 +437,8 @@ class Game:
             self.text("LEFT / RIGHT (or A / D): lane      P: pause      ESC: back",
                       C.FONT_TINY, C.TEXT_DIM, center=(cx, 238))
             self.draw_top10(290)
-            self.prompt("SPACE / ENTER: start      ESC: quit", 690)
-            self.draw_input_status(748)
+            self.prompt("SPACE / ENTER: start      ESC: quit", 672)
+            self.draw_input_status(770)
         elif self.state == COUNTDOWN:
             label = str(math.ceil(self.countdown)) if self.countdown > 0 else "GO!"
             self.text(label, C.FONT_BIG * 2, C.TEXT_HIGHLIGHT, center=(cx, C.HEIGHT // 2 - 60))

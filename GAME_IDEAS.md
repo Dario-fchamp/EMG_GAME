@@ -550,7 +550,8 @@ Controls: **←/→** or **A/D** change lane · **SPACE/ENTER** start / resume /
 | `input_sources.py` | `Command` enum, `CommandSource` interface, `KeyboardSource`, `OscSource` (commands from Bonsai). |
 | `osc_protocol.py` | Minimal OSC 1.0 decoder/encoder (no external dependency). |
 | `osc_test_sender.py` | Sends LEFT/RIGHT over OSC like Bonsai would, for testing without Bonsai. |
-| `bonsai/LaneDodger_OscSend.bonsai` | Example Bonsai workflow sending LEFT/RIGHT to the game (keys J/L as stand-ins for the EMG). |
+| `bonsai/LaneDodger_Osc.bonsai` | Bonsai workflow sending `/mcoords` (left, right) to the game: your OSC example without the receive branch (mouse X/Y). |
+| `bonsai/LaneDodger_KeyDown.bonsai` | Your Bonsai workflow sending keys A / S on `/mcoords` (LEFT / RIGHT), see 8.7. |
 | `environment.yml` | Conda environment `emg_game`: Python 3.11 + pygame. |
 | `highscores.json` | Created after the first qualifying run. Delete it to reset the Top 10. |
 
@@ -658,18 +659,21 @@ Golden stars appear on the road. Driving over one catches it.
 
 Goal: a **button in Bonsai launches the game**, and a **Bonsai value** (later produced by the EMG pipeline) **sends LEFT/RIGHT** to it.
 
-### 8.1 Architecture
+### 8.1 Architecture (your Bonsai OSC workflow, unchanged)
+
+The game takes the place of the receiving side (`UdpReceive` + `ReceiveMessage`) of your Bonsai OSC example. The sending side stays exactly as it is.
 
 ```
-┌──────────────────────── Bonsai workflow ────────────────────────┐        ┌────── Python process ──────┐
-│                                                                 │        │                            │
-│  [Button] ──────────────────────────► [LaunchGame] ─────────────┼─start─►│  lane_dodger.py --input osc │
-│                                                                 │        │                            │
-│  EMG ► detection ► EmgCommand (0 none / 1 LEFT / 2 RIGHT)        │        │  OscSource (thread)        │
-│        (for now: keys)  │                                       │  OSC   │    ► queue ► Command.LEFT   │
-│                         └──────────► [SendMessage /lanedodger/cmd]┼──UDP──►│              Command.RIGHT  │
-│                                      (127.0.0.1 : 5005)         │        │  Keyboard still works       │
-└─────────────────────────────────────────────────────────────────┘        └────────────────────────────┘
+┌──────────── Bonsai workflow (bonsai/LaneDodger_Osc.bonsai) ────────────┐           ┌───── Python process ─────┐
+│                                                                        │           │                          │
+│  CreateUdpClient "UdpSend"   Port 0 ─► localhost : 5005                │           │  lane_dodger.py          │
+│                                                                        │           │      --input osc         │
+│  MouseMove (now) / 2 digital inputs (later)                            │    OSC    │                          │
+│     ├─► X  (later: LEFT muscle)  ─┐                                    │  /mcoords │  OscSource (port 5005)   │
+│     └─► Y  (later: RIGHT muscle) ─┴─► Zip ─► SendMessage "/mcoords" ───┼───"ii"───►│   Item1 rises → LEFT     │
+│                                           (Connection UdpSend)         │    UDP    │   Item2 rises → RIGHT    │
+│                                                                        │           │  Keyboard still works    │
+└────────────────────────────────────────────────────────────────────────┘           └──────────────────────────┘
 ```
 
 **Why a separate process plus OSC**, rather than running Python inside Bonsai:
@@ -681,7 +685,7 @@ Goal: a **button in Bonsai launches the game**, and a **Bonsai value** (later pr
 
 ### 8.1b OSC Quick Start (step by step)
 
-**What OSC is:** Open Sound Control. Small messages sent over UDP, each made of an **address** (a path such as `/lanedodger/cmd`) and **arguments** (here, one number). Bonsai sends, the game listens. Both run on the same computer (`127.0.0.1`).
+**What OSC is:** Open Sound Control. Small messages sent over UDP, each made of an **address** (here `/mcoords`) and **arguments** (here two numbers, type tag `ii`). Bonsai sends, the game listens. Both run on the same computer (localhost).
 
 1. **Test the game alone, without Bonsai.**
    - Anaconda Prompt 1:
@@ -690,92 +694,90 @@ Goal: a **button in Bonsai launches the game**, and a **Bonsai value** (later pr
      conda activate emg_game
      python lane_dodger.py --input osc
      ```
-     The menu's bottom line must read **"OSC listening on 127.0.0.1:5005"**.
-   - Anaconda Prompt 2: run the same `cd` and `conda activate`, then `python osc_test_sender.py` and type `l` or `r` + ENTER. The menu line updates to "last: LEFT (1)" and so on. Press SPACE in the game window, then send `l` / `r` again: the car moves.
-2. **Test with Bonsai, using the keyboard as a stand-in for EMG.**
-   - In Bonsai, install the **Bonsai - OSC Library** and **Bonsai - Windows Input Library** packages (Tools → Manage Packages).
-   - Open `bonsai\LaneDodger_OscSend.bonsai` and press Start.
-   - With the game running (`--input osc`), press **J** (LEFT) or **L** (RIGHT) anywhere. The menu line counts the commands, and in a run the car moves.
-3. **Switch to the digital input / EMG.** In the Bonsai workflow, replace each `KeyDown → IntProperty` pair with your signal. What reaches `SendMessage` must be:
-   - `1` for LEFT and `2` for RIGHT on address `/lanedodger/cmd`, **or**
-   - `true`/`false` (or `1`/`0`) on `/lanedodger/left` and `/lanedodger/right`, one line per muscle.
-
-   **One message must equal one contraction.** For a digital line, put `DistinctUntilChanged` before `SendMessage` (see 8.5).
+     The menu's bottom line must read **"OSC listening on port 5005"**.
+   - Anaconda Prompt 2: run the same `cd` and `conda activate`, then `python osc_test_sender.py`. Type `l` or `r` + ENTER. Each one sends `/mcoords (1, 0)` then `(0, 0)` for LEFT, or `(0, 1)` then `(0, 0)` for RIGHT, like a short contraction. The menu's two status lines update. Press SPACE in the game window, then send `l` / `r` again: the car moves.
+2. **Test the link with Bonsai (mouse).**
+   - In Bonsai, install the **Bonsai - OSC Library** and **Bonsai - Windows Input Library** packages if they aren't installed yet.
+   - Open `bonsai\LaneDodger_Osc.bonsai` (your workflow without the receive part) or your original workflow, and press Start.
+   - Move the mouse. In the game menu, the line **"received N   last: /mcoords (812, 455)"** follows the mouse. This proves Bonsai → game works.
+   - Mouse coordinates are not real commands. Both values are above the threshold, so they trigger LEFT and RIGHT once, then nothing until a value returns to 0.
+3. **Switch to the digital inputs / EMG.** Replace `MouseMove → X / Y` with your two signals: **LEFT muscle → first input of `Zip` (Item1)**, **RIGHT muscle → second input (Item2)**. Values can be `0/1` ints, booleans, or `0..1` floats. See 8.5 for when to use `Zip` or `CombineLatest`.
 4. **Check the difficulty for EMG** (section 6.4) before the first session.
 
-Settings that must match on both sides:
+**Settings that must match on both sides:**
 
-| Bonsai (`CreateUdpClient` / `SendMessage`) | Game |
+| Bonsai | Game (`config.py` / command line) |
 |---|---|
-| `RemoteHostName` = `127.0.0.1` | `OSC_HOST` / `--host` (default `127.0.0.1`) |
-| `RemotePort` = `5005` | `OSC_PORT` / `--port` (default `5005`) |
-| `Port` = `0` (send only) | n/a |
-| `Address` = `/lanedodger/cmd` (or `/left`, `/right`) | `OSC_ADDRESS_CMD`, `OSC_ADDRESS_LEFT`, `OSC_ADDRESS_RIGHT` |
-| `SendMessage.Connection` = the `CreateUdpClient` `Name` | n/a |
+| `CreateUdpClient` "UdpSend": `RemoteHostName` = `localhost`, `RemotePort` = `5005`, `Port` = `0` | `OSC_PORT` / `--port` = `5005`; listens on `127.0.0.1` and `::1` |
+| `SendMessage`: `Address` = `/mcoords`, `Connection` = `UdpSend` | `OSC_ADDRESS_PAIR` = `"/mcoords"` |
+| `Zip` input 1 (Item1) / input 2 (Item2) | Item1 → LEFT, Item2 → RIGHT |
+| values 0/1 (or false/true, or 0..1) | `OSC_PAIR_THRESHOLD_ON` / `_OFF` = 0.5 |
+
+**A Bonsai `UdpReceive` on the same port as the game:** tested on this PC. The game listens on 127.0.0.1, and Bonsai's `UdpReceive` listens on all addresses. Both can run at the same time, in either order, and **the game receives all the messages**; Bonsai's `ReceiveMessage` then gets nothing. In your KeyDown workflow, `UdpReceive` uses port 5006, different from the game's 5005, so it doesn't matter at all.
 
 **Troubleshooting:**
 
 | Symptom | Cause / fix |
 |---|---|
-| Menu line red: "OSC ERROR: port 5005 unavailable" | Another game instance, or a Bonsai `CreateUdpClient` with `Port = 5005`, is using the port. Close it, or use another port on both sides. |
+| Menu line red: "OSC ERROR: port 5005 in use" | Another game instance is already running. Close it, or use another port on both sides (`RemotePort` and `--port`). |
 | Menu line says "Input: keyboard" | The game was started without `--input osc`. |
-| Count doesn't increase when Bonsai sends | Wrong `RemotePort`/host in Bonsai, or the Bonsai workflow isn't running. The game console prints "ignoring OSC address ..." if the address is wrong. |
-| Count increases but the car doesn't move | Not in a run: OSC steers only while PLAYING. Press SPACE in the game window. |
-| Car jumps several lanes per contraction | Bonsai sends the held state repeatedly. Add `DistinctUntilChanged` in Bonsai, or set `OSC_TRIGGER = "rising"` in `config.py`. |
-| Arrow keys move the car twice | Bonsai `KeyDown` is global: don't use the arrow keys as Bonsai test keys (the example uses J/L). |
+| "nothing received yet" while Bonsai runs | Wrong `RemotePort` in "UdpSend", or the workflow isn't started. |
+| Values arrive but the car doesn't move | Not in a run: OSC steers only while PLAYING. Press SPACE in the game window. Or the values never return to 0 between contractions. |
+| Console: "ignoring OSC address ..." | The `SendMessage` `Address` differs from `/mcoords`. Change it in Bonsai, or set `OSC_ADDRESS_PAIR`. |
+| Console: "/mcoords needs 2 values" | Something other than the `Zip` of two values reaches `SendMessage`. |
+| LEFT/RIGHT swapped | Swap the two inputs of `Zip`. |
 
 ### 8.2 Python Side (implemented)
 
 Start the game in OSC mode:
 
 ```
-python lane_dodger.py --input osc              # listens on 127.0.0.1:5005
+python lane_dodger.py --input osc              # listens on port 5005 (127.0.0.1 and ::1)
 python lane_dodger.py --input osc --port 6000  # other port
 ```
 
 The keyboard always stays active. **Nothing received over OSC can start, pause or quit the game**: menus are keyboard-only, and OSC LEFT/RIGHT only steer the car while playing.
 
-**OSC protocol** (what Bonsai's `SendMessage` must send to `127.0.0.1:5005`):
+**OSC protocol:**
 
-| Address | Argument | Effect |
+| Address | Arguments | Effect |
 |---|---|---|
-| `/lanedodger/cmd` | int `1` | LEFT |
-| `/lanedodger/cmd` | int `2` | RIGHT |
-| `/lanedodger/cmd` | int `0` | nothing (lets you send a "released" state) |
-| `/lanedodger/cmd` | string `"LEFT"` / `"RIGHT"` | LEFT / RIGHT |
-| `/lanedodger/left` | `true` / non-zero / no argument | LEFT (`false` / `0` ignored) |
-| `/lanedodger/right` | `true` / non-zero / no argument | RIGHT (`false` / `0` ignored) |
+| **`/mcoords`** (main, = your workflow) | **2 values**: `ii` (ints), `ff` (floats), `TF` (bools)... | **Item1** going above 0.5 → **LEFT**; **Item2** going above 0.5 → **RIGHT** |
+| **`/mcoords`** (KeyDown workflow, 8.7) | **a key**: code `65`/`83`, name `"A"`/`"S"`, or a key event | **A → LEFT**, **S → RIGHT**, one per message |
+| `/lanedodger/cmd` | int `1` / `2` (`0` ignored), or string `"LEFT"`/`"RIGHT"` | LEFT / RIGHT (alternative) |
+| `/lanedodger/left`, `/lanedodger/right` | `true` / non-zero / no argument | LEFT / RIGHT (alternative; `false` / `0` ignored) |
 
-Use **either** the single `/cmd` address with 1/2, **or** one address per muscle (`/left`, `/right`). The second option fits two digital input lines naturally. Any other address is ignored, with a one-time warning in the console.
+**How `/mcoords` becomes commands (rising edge):** each of the two values is a channel (muscle) with an on/off state.
+- A channel turns **on** when its value goes **above `OSC_PAIR_THRESHOLD_ON`** (0.5). That gives **one** lane change.
+- It turns **off** again when the value goes back to **≤ `OSC_PAIR_THRESHOLD_OFF`** (0.5). Only then can it trigger again.
 
-**Trigger mode** (`OSC_TRIGGER` in `config.py`):
-- `"every"` (default): each active message = one lane change. Use it when Bonsai sends **one message per contraction**, or sends only **when the state changes** (true on press, false on release). Digital inputs usually behave like this.
-- `"rising"`: a lane change only when an address goes from inactive to active. Use it if Bonsai sends the **held state continuously** (e.g. a sampled value of 1 for the whole contraction). Otherwise every sample would move the car.
+Consequences:
+- It works whether Bonsai sends **every sample** (e.g. `(1,0)` repeated 500 times during a contraction) or **only on changes**. Either way it's one contraction = one lane change, so no `DistinctUntilChanged` is needed.
+- Two contractions need a return to 0 in between, which is natural for a digital input.
+- For **analog** values later (e.g. an EMG envelope normalised to 0..1), set `OSC_PAIR_THRESHOLD_OFF` lower than `_ON` (e.g. ON 0.6 / OFF 0.4). This hysteresis stops the noise around the threshold from producing several commands.
+
+The single-value addresses use `OSC_TRIGGER`: `"every"` (default) = each active message is a command; `"rising"` = edge detection, like `/mcoords`.
 
 **Files involved:**
-- `osc_protocol.py`: a minimal OSC 1.0 decoder/encoder, so no extra package is needed. It handles int, float, double, long, string, bool, blob and bundles. It was checked byte-for-byte against the `python-osc` reference library.
+- `osc_protocol.py`: a minimal OSC 1.0 decoder/encoder, so no extra package is needed. It handles int, float, double, long, string, bool, blob and bundles, and was checked byte-for-byte against the `python-osc` reference library.
 - `input_sources.py` → `OscSource`:
-  - a UDP socket on a background thread that decodes packets, maps them to `Command.LEFT/RIGHT` and puts them on a queue;
-  - `poll()` empties the queue every frame without blocking;
-  - malformed packets and unknown addresses are ignored with a warning;
-  - if the port is busy (e.g. a second game instance), the game still starts. The menu shows the error in red and the keyboard keeps working.
-- `lane_dodger.py`: the `--input / --host / --port` options. In OSC mode, the **menu shows a status line** with "OSC listening on 127.0.0.1:5005 | last: LEFT (12)". Before starting a run, you can check there that every contraction arrives.
-- `config.py`: `INPUT_MODE`, `OSC_HOST`, `OSC_PORT`, the 3 addresses, `OSC_TRIGGER`, and `PAUSE_ON_FOCUS_LOST_OSC = False`. In OSC mode the game does **not** auto-pause when you click in Bonsai.
-- `osc_test_sender.py`: sends commands exactly like Bonsai would, for testing without Bonsai. In a second Anaconda Prompt:
-  ```
-  python osc_test_sender.py              # type l / r + ENTER
-  python osc_test_sender.py --random 20  # 20 random commands
-  ```
-- `bonsai/LaneDodger_OscSend.bonsai`: an example Bonsai workflow in the same style as your OSC example. `CreateUdpClient` "LaneDodger" (Port 0, remote 127.0.0.1:5005) is connected as **J → `IntProperty 1` → `SendMessage /lanedodger/cmd`** and **L → `IntProperty 2` → `SendMessage /lanedodger/cmd`**. J/L are used instead of the arrows because Bonsai's `KeyDown` is global: the arrows would also move the car through the game's own keyboard input. *Written by hand; not yet opened in Bonsai.*
-
-**Port note:** your OSC example workflow uses 2323 for its own `UdpReceive`. The game uses 5005, so the two don't conflict. Don't point the game at a port that a Bonsai `CreateUdpClient` is listening on (`Port` ≠ 0).
+  - UDP sockets on 127.0.0.1 and ::1, read on a background thread (in case Bonsai's `localhost` resolves to IPv6);
+  - decodes packets, applies the rules above, and queues `Command.LEFT/RIGHT`. `poll()` empties the queue every frame without blocking;
+  - malformed packets and unknown addresses are ignored with a one-time console warning;
+  - if the port is busy, the game still starts. The menu shows the error in red and the keyboard keeps working.
+- `lane_dodger.py`: the `--input / --host / --port` options. In OSC mode the **menu shows two status lines**:
+  - "received N   last: /mcoords (1, 0)": the raw values, which prove the Bonsai link works;
+  - "OSC listening on port 5005 | last command: LEFT (12)": the commands produced.
+- `config.py`: `OSC_PORT = 5005`, `OSC_ADDRESS_PAIR = "/mcoords"`, `OSC_PAIR_THRESHOLD_ON/OFF`, `OSC_LISTEN_IPV6`, the alternative addresses, `OSC_TRIGGER`, and `PAUSE_ON_FOCUS_LOST_OSC = False`. In OSC mode the game does **not** auto-pause when you click in Bonsai.
+- `osc_test_sender.py`: sends `/mcoords` pairs exactly like the Bonsai workflow, for testing without Bonsai (`l` / `r` interactive, or `--random 20`).
+- `bonsai/LaneDodger_Osc.bonsai`: your OSC example workflow, node for node, without the `UdpReceive`/`ReceiveMessage` branch (the game is now the receiver). Open it in Bonsai 2.8.2 and replace `MouseMove → X / Y` with your signals.
 
 ### 8.3 Bonsai Side: Packages
 
 In Bonsai: **Tools → Manage Packages**, then install:
 - **Bonsai - OSC Library** (`Bonsai.Osc`): `CreateUdpClient`, `SendMessage`.
 - **Bonsai - GUI Library** (`Bonsai.Gui`): a clickable `Button` control. Alternative without it: `KeyDown` from **Bonsai - Windows Input Library**, e.g. F5 = launch.
-- **Bonsai - Windows Input Library** (`Bonsai.Windows.Input`): `KeyDown`, to test commands from the keyboard before EMG is ready.
+- **Bonsai - Windows Input Library** (`Bonsai.Windows.Input`): `MouseMove`, used by the workflow to test the OSC link before the digital inputs are connected.
 
 ### 8.4 Bonsai Side: Launch Button
 
@@ -848,48 +850,76 @@ Notes:
 - Calling the env's `python.exe` directly is enough; `conda activate` is not needed for a pure pip package like pygame. If an import error ever shows up, use `FileName = "cmd.exe"` and `Arguments = "/c conda activate emg_game && python ..."` instead.
 - Clicking again while the game runs does nothing (one instance at a time).
 
-### 8.5 Bonsai Side: Sending Commands from a Value
+### 8.5 Bonsai Side: Sending the Commands
 
-Use a named subject as the single "command value" that the rest of the workflow writes to. For now the keyboard writes it; later the EMG pipeline does.
+Same structure as your OSC example: one `CreateUdpClient` for sending, two values combined into one pair, one `SendMessage`.
 
 ```
-Workflow root:
+CreateUdpClient    Name = UdpSend, Port = 0, RemoteHostName = localhost, RemotePort = 5005
 
-  CreateUdpClient               Name = game, RemoteHostName = 127.0.0.1, RemotePort = 5005
-                                (leave Port = 0: Bonsai only sends)
+── Now: test the link with the mouse ───────────────────────────────────────────
+MouseMove ─┬─► X ─┐
+           └─► Y ─┴─► Zip ─► SendMessage   Connection = UdpSend, Address = /mcoords
 
-  BehaviorSubject<int>          Name = EmgCommand        0 = none, 1 = LEFT, 2 = RIGHT
+── Later, case A: both lines come from the SAME sample (one device, one port read) ──
+DigitalInput sample ─┬─► left line  (0/1) ─┐
+                     └─► right line (0/1) ─┴─► Zip ─► SendMessage (UdpSend, /mcoords)
 
-  ── Producer, for testing now ──────────────────────────────────────────────
-  KeyDown ─► Condition (Key == Left)  ─► Int (Value = 1) ─► EmgCommand (MulticastSubject)
-  KeyDown ─► Condition (Key == Right) ─► Int (Value = 2) ─► EmgCommand (MulticastSubject)
-
-  ── Producer, later (replaces the two lines above) ─────────────────────────
-  EMG device ─► filter / RMS envelope ─► threshold + refractory ─► 1 or 2 ─► EmgCommand
-
-  ── Alternative: two digital input lines (one per muscle), no subject needed ──
-  DigitalInput line A ─► DistinctUntilChanged ─► SendMessage  Address = /lanedodger/left
-  DigitalInput line B ─► DistinctUntilChanged ─► SendMessage  Address = /lanedodger/right
-     (sends true on contraction onset, false on release; the game ignores false.
-      If the input is a 0/1 int, that works the same.)
-
-  ── Consumer: forward to the game ──────────────────────────────────────────
-  EmgCommand (SubscribeSubject) ─► SendMessage   Connection = game
-                                                 Address    = /lanedodger/cmd
-     (0 is ignored by the game, so no Condition is needed)
+── Later, case B: two SEPARATE sources that emit independently ─────────────────
+Digital input LEFT  muscle (0/1) ─┐
+Digital input RIGHT muscle (0/1) ─┴─► CombineLatest ─► SendMessage (UdpSend, /mcoords)
 ```
 
-**Important: event vs. state.** The game expects **one message per contraction**.
-- If your detection outputs **one value per contraction** (an event stream), forward it as shown above. Don't add `DistinctUntilChanged`, or two LEFTs in a row would merge into one.
-- If your detection outputs a **state that is held during the contraction** (e.g. 1 for the whole contraction, then back to 0), insert **`DistinctUntilChanged`** before `SendMessage`. Only the changes then reach the game. Without it, the game would get a LEFT at every sample of the contraction (hundreds per second). The alternative is to set `OSC_TRIGGER = "rising"` in `config.py` and let the game do the edge detection.
-- In both cases the refractory period belongs in Bonsai, in the detection. The game moves one lane per received message.
+**`Zip` or `CombineLatest`?**
+- `Zip` pairs the *n-th* value of input 1 with the *n-th* value of input 2. That is right for X/Y of the same mouse event, or for two lines read from the same sample (case A).
+- With **two independent sources** (case B), `Zip` would wait for the other muscle and pair values from different times. For example, three LEFT contractions with no RIGHT would send nothing. Use **`CombineLatest`** there (Bonsai.Reactive): it sends the latest value of both every time either one changes. That is exactly what the game expects.
+- In both cases, the order of the inputs decides the mapping: first input = Item1 = **LEFT**, second = Item2 = **RIGHT**.
+
+**What the values must look like:**
+- Each value is the **state** of one muscle: `0` (or false) = relaxed, `1` (or true) = contraction detected.
+- The game does the edge detection (8.2), so Bonsai can send every sample or only the changes.
+- Booleans work as well as ints. If a digital input gives a different type (e.g. a bit mask), convert it with an `ExpressionTransform` such as `it ? 1 : 0` or a `BitwiseAnd` + `GreaterThan`.
+- A **refractory period** (ignoring a new contraction for ~200–300 ms) can be added in Bonsai on each line if the detection is noisy. The game also only fires again after the value has gone back to 0.
 
 ### 8.6 Practical Notes
 
 - **Order**: start the Bonsai workflow (this opens the UDP client) → click the launch button → use the keyboard in the game window to start a run → steer with the EMG/Bonsai commands.
 - **Window focus**: the menus (SPACE/ESC/P) are keyboard-only and need the **game window** to have focus. OSC steering works even when the game window is not focused. In OSC mode the game does not auto-pause on focus loss (`PAUSE_ON_FOCUS_LOST_OSC`).
-- **Port in use**: if the menu shows "OSC ERROR: port 5005 unavailable", an old game instance (or a Bonsai `CreateUdpClient` with `Port = 5005`) is using the port. Close it, or change the port in both `CreateUdpClient` (`RemotePort`) and `--port`.
+- **Port in use**: if the menu shows "OSC ERROR: port 5005 in use", an old game instance is still running. Close it, or change the port in both `CreateUdpClient` (`RemotePort`) and `--port`. A Bonsai `UdpReceive` on the same port does *not* block the game (see 8.1b).
 - **Firewall**: localhost traffic is normally not blocked. If Windows asks about network access for `python.exe` at the first launch, allow it for private networks.
 - **Latency check**: send a command from Bonsai while looking at the car. If you want numbers, timestamp the OSC message in Bonsai and log the receive time in the game (the CSV logging idea from section 1).
 - **Difficulty**: re-read section 6.4 before the first EMG session.
+
+### 8.7 KeyDown Workflow (`bonsai/LaneDodger_KeyDown.bonsai`)
+
+Your test workflow, saved exactly as written (Bonsai 2.9.0):
+
+```
+CreateUdpClient "UdpReceive"   Port 5006                        (not used by the game; no conflict)
+CreateUdpClient "UdpSend"      Port 0 ─► localhost : 5005        (= the game's default port)
+
+KeyDown (Filter = A) ─┐
+                      ├─► Merge ─► SendMessage   Connection = UdpSend, Address = /mcoords
+KeyDown (Filter = S) ─┘
+```
+
+**How the game reads it:**
+- On `/mcoords`, a message that is **not** a pair of two numbers is treated as a **key message**.
+- The game looks for the key in whatever form Bonsai serialises it:
+  - the Windows key code (`65` for A, `83` for S);
+  - the key name (`"A"`, `"S"`);
+  - the key code inside a serialised key event with several fields.
+- **A → LEFT, S → RIGHT**, one lane change per message.
+- The keys are set by `OSC_KEY_LEFT` / `OSC_KEY_RIGHT` in `config.py`. Change them there if you change the `Filter` of the `KeyDown` nodes.
+- The **first message of each kind is printed in the game console**, e.g. `OSC: first message of this kind: /mcoords [65]`. You can see exactly what Bonsai sends, and the menu shows it too ("received N   last: /mcoords (65)"). If a key message can't be understood, the console says so once, with its content. Paste that line to me and I'll adapt the parser.
+
+**Steps:**
+1. Anaconda Prompt: `python lane_dodger.py --input osc` (port 5005 by default, no `--port` needed).
+2. Bonsai: open `LaneDodger_KeyDown.bonsai` and press Start.
+3. In the game window, press SPACE to start a run. Press **A** / **S** anywhere: the car moves left / right.
+
+**Things to know:**
+- **Arrows only on the game's own keyboard in OSC mode.** Bonsai's `KeyDown` listens to every window, so pressing **A** in the game window is caught by Bonsai, which sends LEFT over OSC. If the game also treated A as LEFT (its normal keyboard mode), the car would move twice. In OSC mode the game's own LEFT/RIGHT keys are therefore **the arrows only** (`KEYS_LEFT_OSC` / `KEYS_RIGHT_OSC`). SPACE, P and ESC are unchanged.
+- **`SuppressRepetitions` = false**: holding A down makes Windows repeat the key about 30 times per second, and each repeat is a lane change. To get one lane change per press, like one per contraction, set **`SuppressRepetitions` = true** on both `KeyDown` nodes.
+- When the digital inputs replace the keys, switch to the **pair** format (8.5: `Zip` / `CombineLatest` of the two muscle states). It gives proper one-command-per-contraction edge detection on the game side.
 

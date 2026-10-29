@@ -1,0 +1,8 @@
+name: emg_game
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - pygame>=2.5

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WorkflowBuilder Version="2.8.2"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:osc="clr-namespace:Bonsai.Osc;assembly=Bonsai.Osc"
+                 xmlns:wie="clr-namespace:Bonsai.Windows.Input;assembly=Bonsai.Windows.Input"
+                 xmlns="https://bonsai-rx.org/2018/workflow">
+  <Workflow>
+    <Nodes>
+      <Expression xsi:type="Annotation">
+        <Name>Connection to the game</Name>
+        <Text><![CDATA[Sends to lane_dodger.py started with --input osc (listens on 127.0.0.1:5005). Port = 0: this client only sends.]]></Text>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="osc:CreateUdpClient">
+          <osc:Name>LaneDodger</osc:Name>
+          <osc:Port>0</osc:Port>
+          <osc:RemoteHostName>127.0.0.1</osc:RemoteHostName>
+          <osc:RemotePort>5005</osc:RemotePort>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="Annotation">
+        <Name>LEFT (test: key J)</Name>
+        <Text><![CDATA[Replace KeyDown with your digital input / EMG detection. Send int 1 for LEFT. Keys J/L are used because Bonsai KeyDown is global: the arrow keys would also move the car through the game's own keyboard input.]]></Text>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="wie:KeyDown">
+          <wie:Filter>J</wie:Filter>
+          <wie:SuppressRepetitions>true</wie:SuppressRepetitions>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="IntProperty">
+        <Value>1</Value>
+      </Expression>
+      <Expression xsi:type="osc:SendMessage">
+        <osc:Connection>LaneDodger</osc:Connection>
+        <osc:Address>/lanedodger/cmd</osc:Address>
+      </Expression>
+      <Expression xsi:type="Annotation">
+        <Name>RIGHT (test: key L)</Name>
+        <Text><![CDATA[Send int 2 for RIGHT.]]></Text>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="wie:KeyDown">
+          <wie:Filter>L</wie:Filter>
+          <wie:SuppressRepetitions>true</wie:SuppressRepetitions>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="IntProperty">
+        <Value>2</Value>
+      </Expression>
+      <Expression xsi:type="osc:SendMessage">
+        <osc:Connection>LaneDodger</osc:Connection>
+        <osc:Address>/lanedodger/cmd</osc:Address>
+      </Expression>
+    </Nodes>
+    <Edges>
+      <Edge From="0" To="1" Label="Source1" />
+      <Edge From="2" To="3" Label="Source1" />
+      <Edge From="3" To="4" Label="Source1" />
+      <Edge From="4" To="5" Label="Source1" />
+      <Edge From="6" To="7" Label="Source1" />
+      <Edge From="7" To="8" Label="Source1" />
+      <Edge From="8" To="9" Label="Source1" />
+    </Edges>
+  </Workflow>
+</WorkflowBuilder>

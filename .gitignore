@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Local game data (personal Top 10)
+highscores.json
+*.tmp
+
+# Bonsai local files
+*.bonsai.layout
+.bonsai/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db

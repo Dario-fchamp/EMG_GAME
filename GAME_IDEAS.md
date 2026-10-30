@@ -550,6 +550,8 @@ Controls: **←/→** or **A/D** change lane · **SPACE/ENTER** start / resume /
 | `input_sources.py` | `Command` enum, `CommandSource` interface, `KeyboardSource`, `OscSource` (commands from Bonsai). |
 | `osc_protocol.py` | Minimal OSC 1.0 decoder/encoder (no external dependency). |
 | `osc_output.py` | `OscSender`: game → Bonsai events (star caught → `/lanedodger/star` on port 5006), see 8.8. |
+| `music.py` | Background music from a file in `assets/` (looped; follows pause / crash), see section 9. |
+| `assets/` | Music file (`music.ogg` / `.mp3` / `.wav`, not committed to git) and optional sprites. |
 | `osc_test_sender.py` | Sends LEFT/RIGHT over OSC like Bonsai would, for testing without Bonsai. |
 | `bonsai/LaneDodger_Osc.bonsai` | Bonsai workflow sending `/mcoords` (left, right) to the game: your OSC example without the receive branch (mouse X/Y). |
 | `bonsai/LaneDodger_KeyDown.bonsai` | Your Bonsai workflow sending keys A / S on `/mcoords` (LEFT / RIGHT), see 8.7. |
@@ -976,3 +978,28 @@ your logic (e.g. on the 0 → 1 change, trigger a sound on the Harp board)
   - a star followed by a crash gives `1, 0`;
   - quitting during a pulse gives `1, 0`.
 
+
+---
+
+## 9. Background Music
+
+The game plays background music from a file, with `pygame.mixer.music` (streamed from disk, looped). No extra package is needed.
+
+**Adding a track:** put a file named **`music.ogg`**, **`music.mp3`** or **`music.wav`** in `D:\EMG_GAME\assets\` (the first one found is used), or give a path: `python lane_dodger.py --music D:\path\to\track.ogg`. `.ogg` is the most reliable format with pygame. If an `.mp3` doesn't play, convert it to `.ogg` (e.g. with Audacity).
+
+**Behaviour** (`Game.sync_music()`, checked every frame):
+
+| Game state | Music |
+|---|---|
+| Menu, countdown, playing | plays (looping) |
+| Paused (P / ESC / focus lost) | paused, resumes where it stopped |
+| Crash → name entry → game over | fades out (`MUSIC_FADEOUT_MS`, 0.8 s) |
+| New run / back to menu | starts again from the beginning |
+
+- **M** mutes or unmutes at any time (except while typing a name, where M is a letter).
+- No file, or no audio device: a one-line message in the console, and the game runs silently.
+- Settings in `config.py`: `MUSIC_ENABLED`, `MUSIC_FILES`, `MUSIC_VOLUME` (0.5), `MUSIC_FADEOUT_MS`, `KEYS_MUTE`.
+
+**Copyright:** commercial game music (e.g. Mario Kart, owned by Nintendo) can't be redistributed. That's why the project doesn't include a track, and why `.gitignore` keeps `assets/*.ogg|mp3|wav` off GitHub. A copy you own can be used locally. For a track that can be shared with the code, look for **CC0 / public-domain** racing or chiptune music, e.g. on opengameart.org (filter by licence CC0). If you use such a track, you can remove the music lines from `.gitignore`.
+
+**Why in Python and not in Bonsai:** the music follows the game states (pause, crash, new run) with no extra messages, works without Bonsai (keyboard mode), and needs no file looping logic in Bonsai. Bonsai stays in charge of the precisely timed sounds (the star signal → Harp board, section 8.8).

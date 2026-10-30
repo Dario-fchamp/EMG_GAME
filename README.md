@@ -13,7 +13,9 @@ python lane_dodger.py                   # keyboard only
 python lane_dodger.py --input osc       # + LEFT/RIGHT from Bonsai over OSC (localhost:5005)
 ```
 
-Controls: ←/→ or A/D change lane (arrows only with `--input osc`) · SPACE/ENTER start · P pause · ESC back / quit.
+Controls: ←/→ or A/D change lane (arrows only with `--input osc`) · SPACE/ENTER start · P pause · M music on/off · ESC back / quit.
+
+Background music: put `music.ogg` (or `.mp3` / `.wav`) in `assets/`, or use `--music <file>`. Music files are not committed to git (copyright); see `assets/README.md`.
 
 ## OSC (from Bonsai)
 

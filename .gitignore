@@ -2,6 +2,11 @@
 __pycache__/
 *.py[cod]
 
+# Music files (usually copyrighted: keep them local)
+assets/*.ogg
+assets/*.mp3
+assets/*.wav
+
 # Local game data (personal Top 10)
 highscores.json
 *.tmp

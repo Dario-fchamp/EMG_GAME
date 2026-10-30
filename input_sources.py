@@ -19,8 +19,9 @@ import osc_protocol
 class Command(Enum):
     LEFT = auto()       # from keyboard, or from EMG via Bonsai (OSC)
     RIGHT = auto()
-    START = auto()      # START/PAUSE/BACK/QUIT: keyboard (and window close) only
+    START = auto()      # START/PAUSE/MUTE/BACK/QUIT: keyboard (and window close) only
     PAUSE = auto()
+    MUTE = auto()
     BACK = auto()
     QUIT = auto()
 
@@ -44,6 +45,7 @@ class KeyboardSource(CommandSource):
             (C.KEYS_RIGHT_OSC if osc_mode else C.KEYS_RIGHT, Command.RIGHT),
             (C.KEYS_START, Command.START),
             (C.KEYS_PAUSE, Command.PAUSE),
+            (C.KEYS_MUTE, Command.MUTE),
             (C.KEYS_BACK, Command.BACK),
         )
 

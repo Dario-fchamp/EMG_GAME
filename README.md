@@ -24,6 +24,8 @@ Bonsai sends with `CreateUdpClient` (RemoteHostName `localhost`, RemotePort `500
 | a key | `KeyDown A` / `KeyDown S` → `Merge` → `SendMessage` | A = LEFT, S = RIGHT (one lane per message) |
 | 2 values (`ii`, `ff` or bools) | `Zip`/`CombineLatest(left, right)` → `SendMessage` | Item1 going 0 → 1 = LEFT, Item2 going 0 → 1 = RIGHT (one lane per contraction) |
 
+The game also sends a **binary star signal** to `127.0.0.1:5006` (Bonsai's `UdpReceive`): **`/lanedodger/star`** = `0`, going to `1` for 0.1 s each time a star is caught, then back to `0`. In Bonsai, read it with `ReceiveMessage` (Address `/lanedodger/star`, TypeTag `i`).
+
 Bonsai workflows: `bonsai/LaneDodger_KeyDown.bonsai` (keys A/S as stand-ins for the muscles) and `bonsai/LaneDodger_Osc.bonsai` (mouse X/Y as a stand-in). Test without Bonsai: `python osc_test_sender.py`.
 
 See [GAME_IDEAS.md](GAME_IDEAS.md) for the full design, code explanations and the Bonsai integration guide (section 8).

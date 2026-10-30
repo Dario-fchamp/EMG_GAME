@@ -94,6 +94,12 @@ OSC_TRIGGER = "every"               # (single-value addresses only; the pair add
                                     # "every": each active message = one command
                                     # "rising": one command only when an address becomes active
                                     #   (use it if Bonsai streams a held state continuously)
+# OSC output: game events sent TO Bonsai (osc mode only), e.g. to play a sound on a Harp board
+OSC_SEND_HOST = "127.0.0.1"
+OSC_SEND_PORT = 5006                # = Port of Bonsai's "UdpReceive" CreateUdpClient
+OSC_ADDRESS_STAR = "/lanedodger/star"   # binary star signal, int (Bonsai ReceiveMessage: TypeTag = i):
+                                        #   0 at startup, 1 when a star is caught, back to 0 after STAR_PULSE_TIME
+STAR_PULSE_TIME = 0.1               # s the star signal stays at 1
 PAUSE_ON_FOCUS_LOST = True          # keyboard mode: pause when the game window loses focus
 PAUSE_ON_FOCUS_LOST_OSC = False     # osc mode: keep running (you may click in Bonsai while playing)
 

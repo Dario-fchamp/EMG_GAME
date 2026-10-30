@@ -549,6 +549,7 @@ Controls: **←/→** or **A/D** change lane · **SPACE/ENTER** start / resume /
 | `highscores.py` | Load / insert / save the Top 10 in `highscores.json`. |
 | `input_sources.py` | `Command` enum, `CommandSource` interface, `KeyboardSource`, `OscSource` (commands from Bonsai). |
 | `osc_protocol.py` | Minimal OSC 1.0 decoder/encoder (no external dependency). |
+| `osc_output.py` | `OscSender`: game → Bonsai events (star caught → `/lanedodger/star` on port 5006), see 8.8. |
 | `osc_test_sender.py` | Sends LEFT/RIGHT over OSC like Bonsai would, for testing without Bonsai. |
 | `bonsai/LaneDodger_Osc.bonsai` | Bonsai workflow sending `/mcoords` (left, right) to the game: your OSC example without the receive branch (mouse X/Y). |
 | `bonsai/LaneDodger_KeyDown.bonsai` | Your Bonsai workflow sending keys A / S on `/mcoords` (LEFT / RIGHT), see 8.7. |
@@ -922,4 +923,56 @@ KeyDown (Filter = S) ─┘
 - **Arrows only on the game's own keyboard in OSC mode.** Bonsai's `KeyDown` listens to every window, so pressing **A** in the game window is caught by Bonsai, which sends LEFT over OSC. If the game also treated A as LEFT (its normal keyboard mode), the car would move twice. In OSC mode the game's own LEFT/RIGHT keys are therefore **the arrows only** (`KEYS_LEFT_OSC` / `KEYS_RIGHT_OSC`). SPACE, P and ESC are unchanged.
 - **`SuppressRepetitions` = false**: holding A down makes Windows repeat the key about 30 times per second, and each repeat is a lane change. To get one lane change per press, like one per contraction, set **`SuppressRepetitions` = true** on both `KeyDown` nodes.
 - When the digital inputs replace the keys, switch to the **pair** format (8.5: `Zip` / `CombineLatest` of the two muscle states). It gives proper one-command-per-contraction edge detection on the game side.
+- **"System.Windows.Forms.Keys cannot be used for parameters of type System.Int32"** on `SendMessage`: Bonsai.Osc only sends plain values (int, float, string, bool...), not the `Keys` value output by `KeyDown`. Convert it before `SendMessage`:
+  - **Option 1 (recommended):** `KeyDown (A) → Int (Value = 1)` and `KeyDown (S) → Int (Value = 2)` → `Merge` → `SendMessage`. The game reads 1 = LEFT, 2 = RIGHT.
+  - **Option 2:** `Merge → ExpressionTransform (Expression = Convert.ToInt32(it)) → SendMessage`. This sends the key code (A = 65, S = 83), which the game also understands.
+
+### 8.8 Game → Bonsai: Star Events (e.g. a sound on a Harp board)
+
+The game also **sends** OSC to Bonsai, in OSC mode (`--input osc`): a **binary star signal**, `0` most of the time and `1` for a short pulse each time the car catches a star.
+
+| To | Address | Argument | Values |
+|---|---|---|---|
+| `127.0.0.1 : 5006` (Bonsai's `UdpReceive`) | `/lanedodger/star` | one int (type tag `i`) | `0` / `1` |
+
+```
+signal   1 ┤        ┌─┐               ┌─┐ ┌─┐
+         0 ┼────────┘ └───────────────┘ └─┘ └──────
+                    ▲  ◄─ 0.1 s ─►    ▲   ▲
+                 star caught         2 stars close together: still 2 separate pulses
+```
+
+- At game startup: `0` (initial state).
+- Star caught: `1`, sent in the same frame as the catch.
+- `STAR_PULSE_TIME` (0.1 s) later: `0`.
+- If a second star is caught while the signal is still at 1, the game sends `0` then `1` immediately. **Every star is a separate 0 → 1 transition.**
+- The signal always returns to 0, even if the car crashes right after a star or the game is closed during a pulse.
+- Messages are only sent on changes: one `1` and one `0` per star. Between stars nothing is sent, and the last value received (0) holds.
+
+**Bonsai side** (your workflow already has `CreateUdpClient` "UdpReceive" with `Port` = 5006):
+
+```
+CreateUdpClient "UdpReceive"   Port = 5006, RemotePort = 0          (already in your workflow)
+
+ReceiveMessage                 Connection = UdpReceive
+                               Address    = /lanedodger/star
+                               TypeTag    = i
+      │  int: 0 (startup), then 1, 0 for each star
+      ▼
+your logic (e.g. on the 0 → 1 change, trigger a sound on the Harp board)
+```
+
+- `ReceiveMessage` outputs the signal value: `1` when a star is caught, `0` when it ends. To act once per star, react to the value `1`, e.g. `Condition` (`it == 1`).
+- To have a value before the first message arrives, Bonsai's `StartWith(0)` can be added after `ReceiveMessage`. The game also sends a `0` at startup.
+- The game sends "fire and forget" (UDP): it never waits for Bonsai. If Bonsai isn't running, nothing happens and the game keeps playing.
+- Settings in `config.py`: `OSC_SEND_HOST`, `OSC_SEND_PORT` (5006; also `--send-port` on the command line), `OSC_ADDRESS_STAR`, and `STAR_PULSE_TIME` (0.1 s). They must match `UdpReceive`'s `Port` and `ReceiveMessage`'s `Address`.
+- At startup the console prints: `OSC: star signal sent to 127.0.0.1:5006 as /lanedodger/star 0/1`.
+- Code: `osc_output.py` (`OscSender`). In `lane_dodger.py`, `Game.star_signal_on()` (called when a star is caught) sends 1, and `Game.update_star_signal()` (every frame, in every state) sends the 0 when the pulse ends.
+- **Latency:** the message leaves in the same frame as the catch (≤ 16 ms at 60 FPS), plus well under 1 ms over localhost. The rest depends on Bonsai and the Harp board.
+- Tested with a stand-in for Bonsai's `UdpReceive`, decoded by the reference `python-osc` library (type tag `,i`):
+  - initial `0`;
+  - `1` on the catch frame, still 1 at 50 ms, back to `0` after 100 ms;
+  - two stars 50 ms apart give `1, 0, 1, 0`;
+  - a star followed by a crash gives `1, 0`;
+  - quitting during a pulse gives `1, 0`.
 

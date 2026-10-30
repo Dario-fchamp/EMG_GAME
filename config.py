@@ -53,6 +53,12 @@ POPUP_TIME = 0.8                    # s, "+50" text rising after a catch
 USE_SPRITES = False                 # True -> load assets/<kind>.png instead of drawing shapes
 ASSETS_DIR = "assets"
 
+# Background music (file in ASSETS_DIR; .ogg is the most reliable format, .mp3 / .wav also work)
+MUSIC_ENABLED = True
+MUSIC_FILES = ["music.ogg", "music.mp3", "music.wav"]  # first one found is used (or: --music <path>)
+MUSIC_VOLUME = 0.5                  # 0.0 .. 1.0
+MUSIC_FADEOUT_MS = 800              # fade out on crash
+
 # Countdown / crash
 COUNTDOWN_TIME = 3.0                # s, before a new run
 RESUME_COUNTDOWN_TIME = 1.0         # s, after a pause
@@ -94,6 +100,12 @@ OSC_TRIGGER = "every"               # (single-value addresses only; the pair add
                                     # "every": each active message = one command
                                     # "rising": one command only when an address becomes active
                                     #   (use it if Bonsai streams a held state continuously)
+# OSC output: game events sent TO Bonsai (osc mode only), e.g. to play a sound on a Harp board
+OSC_SEND_HOST = "127.0.0.1"
+OSC_SEND_PORT = 5006                # = Port of Bonsai's "UdpReceive" CreateUdpClient
+OSC_ADDRESS_STAR = "/lanedodger/star"   # binary star signal, int (Bonsai ReceiveMessage: TypeTag = i):
+                                        #   0 at startup, 1 when a star is caught, back to 0 after STAR_PULSE_TIME
+STAR_PULSE_TIME = 0.1               # s the star signal stays at 1
 PAUSE_ON_FOCUS_LOST = True          # keyboard mode: pause when the game window loses focus
 PAUSE_ON_FOCUS_LOST_OSC = False     # osc mode: keep running (you may click in Bonsai while playing)
 
@@ -104,6 +116,7 @@ KEYS_LEFT_OSC = [pygame.K_LEFT]     # in osc mode: arrows only, because Bonsai K
 KEYS_RIGHT_OSC = [pygame.K_RIGHT]   #   letter keys (A, S...) used in Bonsai would move the car twice
 KEYS_START = [pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER]   # start / restart / resume
 KEYS_PAUSE = [pygame.K_p]
+KEYS_MUTE = [pygame.K_m]            # music on / off
 KEYS_BACK = [pygame.K_ESCAPE]       # in game: pause; paused/game over: menu; menu: quit
 
 # Fonts (pygame default font, sizes in logical px)

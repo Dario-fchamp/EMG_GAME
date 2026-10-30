@@ -14,6 +14,8 @@ import pygame
 import config as C
 import highscores
 from input_sources import Command, KeyboardSource, OscSource
+from music import Music
+from osc_output import OscSender
 from obstacles import Obstacle, Star, draw_star_shape, lane_center_x, shrink
 
 MENU, COUNTDOWN, PLAYING, PAUSED, CRASHED, NAME_ENTRY, GAME_OVER = (
@@ -123,7 +125,8 @@ class Spawner:
 
 
 class Game:
-    def __init__(self, input_mode=C.INPUT_MODE, osc_host=C.OSC_HOST, osc_port=C.OSC_PORT):
+    def __init__(self, input_mode=C.INPUT_MODE, osc_host=C.OSC_HOST, osc_port=C.OSC_PORT,
+                 send_host=C.OSC_SEND_HOST, send_port=C.OSC_SEND_PORT, music_file=None):
         pygame.init()
         self.window = pygame.display.set_mode(C.WINDOW_START_SIZE, pygame.RESIZABLE)
         pygame.display.set_caption(C.TITLE)
@@ -131,6 +134,11 @@ class Game:
         self.clock = pygame.time.Clock()
         self.fonts = {}                                    # size -> Font, loaded on first use
         self.osc = OscSource(osc_host, osc_port) if input_mode == "osc" else None
+        self.osc_out = OscSender(send_host, send_port) if input_mode == "osc" else None   # events to Bonsai
+        self.star_signal_timer = 0.0                       # > 0 while the star signal is at 1
+        if self.osc_out is not None:
+            print(f"OSC: star signal sent to {send_host}:{send_port} as {C.OSC_ADDRESS_STAR} 0/1")
+            self.osc_out.send(C.OSC_ADDRESS_STAR, 0)       # defined initial state
         self.sources = [KeyboardSource(osc_mode=self.osc is not None)]   # keyboard is always active
         if self.osc is not None:
             self.sources.append(self.osc)
@@ -138,6 +146,7 @@ class Game:
         for s in self.sources:
             s.start()
         pygame.key.stop_text_input()                       # only enabled during name entry
+        self.music = Music(music_file)
         self.scores = highscores.load()
         self.state = MENU
         self.t = 0.0                                       # global time (blinking texts)
@@ -220,6 +229,9 @@ class Game:
                 self.handle_command(cmd)
 
     def handle_command(self, cmd):
+        if cmd == Command.MUTE:                            # works in every state
+            self.music.toggle_mute()
+            return
         s = self.state
         if s == MENU:
             if cmd == Command.START:
@@ -265,8 +277,37 @@ class Game:
                     return
 
     # ---------- update ----------
+    def star_signal_on(self):
+        """Star caught: binary signal to Bonsai goes 0 -> 1 (back to 0 in update_star_signal)."""
+        if self.osc_out is None:
+            return
+        if self.star_signal_timer > 0:                     # still at 1: drop to 0 first, so every star
+            self.osc_out.send(C.OSC_ADDRESS_STAR, 0)       #   is a clean 0 -> 1 transition in Bonsai
+        self.osc_out.send(C.OSC_ADDRESS_STAR, 1)
+        self.star_signal_timer = C.STAR_PULSE_TIME
+
+    def update_star_signal(self, dt):
+        if self.star_signal_timer > 0:
+            self.star_signal_timer -= dt
+            if self.star_signal_timer <= 0:
+                self.star_signal_timer = 0.0
+                self.osc_out.send(C.OSC_ADDRESS_STAR, 0)
+
+    def sync_music(self):
+        """Music follows the game state: plays in menu/countdown/run, pauses with the game, fades on crash."""
+        if self.state == PAUSED:
+            self.music.pause()
+        elif self.state in (CRASHED, NAME_ENTRY, GAME_OVER):
+            self.music.fade_out()
+        elif self.music.paused:
+            self.music.resume()
+        else:
+            self.music.play()                              # no-op if already playing
+
     def update(self, dt):
         self.t += dt
+        self.update_star_signal(dt)                        # runs in every state (e.g. crash right after a star)
+        self.sync_music()
         if self.state == MENU:
             self.road.update(dt, C.MENU_SCROLL_SPEED)
         elif self.state == COUNTDOWN:
@@ -290,6 +331,7 @@ class Game:
                 self.stars.remove(s)
                 self.stars_caught += 1
                 self.popups.append([car_rect.centerx, car_rect.top - 15, C.POPUP_TIME])
+                self.star_signal_on()
             self.stars = [s for s in self.stars if not s.off_screen()]
             self.update_popups(dt)
             car_box = self.car.hitbox()
@@ -434,7 +476,7 @@ class Game:
             self.text("EMG LANE DODGER", C.FONT_BIG - 8, C.TEXT_HIGHLIGHT, center=(cx, 120))
             self.text("Dodge the obstacles, catch the stars!", C.FONT_TINY, C.TEXT, center=(cx, 172))
             self.text(f"Score = meters + {C.STAR_POINTS} per star", C.FONT_TINY, C.TEXT, center=(cx, 202))
-            self.text("LEFT / RIGHT (or A / D): lane      P: pause      ESC: back",
+            self.text("LEFT / RIGHT: lane     P: pause     M: music     ESC: back",
                       C.FONT_TINY, C.TEXT_DIM, center=(cx, 238))
             self.draw_top10(290)
             self.prompt("SPACE / ENTER: start      ESC: quit", 672)
@@ -497,6 +539,10 @@ class Game:
             self.draw()
         for s in self.sources:
             s.stop()
+        if self.osc_out is not None:
+            if self.star_signal_timer > 0:
+                self.osc_out.send(C.OSC_ADDRESS_STAR, 0)   # never leave the signal at 1
+            self.osc_out.close()
         pygame.quit()
 
 
@@ -506,8 +552,12 @@ def main():
                         help="osc: also accept LEFT/RIGHT from Bonsai over OSC (keyboard always works)")
     parser.add_argument("--host", default=C.OSC_HOST, help=f"OSC listen address (default {C.OSC_HOST})")
     parser.add_argument("--port", type=int, default=C.OSC_PORT, help=f"OSC UDP port (default {C.OSC_PORT})")
+    parser.add_argument("--send-port", type=int, default=C.OSC_SEND_PORT,
+                        help=f"UDP port of Bonsai's UdpReceive, for star events (default {C.OSC_SEND_PORT})")
+    parser.add_argument("--music", metavar="FILE",
+                        help=f"music file (default: first of {', '.join(C.MUSIC_FILES)} in {C.ASSETS_DIR}/)")
     args = parser.parse_args()
-    Game(args.input, args.host, args.port).run()
+    Game(args.input, args.host, args.port, C.OSC_SEND_HOST, args.send_port, args.music).run()
     sys.exit(0)
 
 
